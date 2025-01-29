@@ -12,6 +12,56 @@ import os
 from datetime import datetime, timedelta
 import json
 
+class CLIVideoPlayer:
+    """Command-line version of the video player"""
+    def __init__(self, video_path, video_title):
+        self.instance = vlc.Instance()
+        self.player = self.instance.media_player_new()
+        self.media = self.instance.media_new(video_path)
+        self.player.set_media(self.media)
+        self.title = video_title
+        self.logger = InteractionLogger()  # Reuse your existing InteractionLogger
+
+    def play(self):
+        print(f"\nPlaying: {self.title}")
+        print("\nControls:")
+        print("  p - Play/Pause")
+        print("  f - Forward 10 seconds")
+        print("  b - Backward 10 seconds")
+        print("  q - Quit")
+
+        self.player.play()
+
+        while True:
+            command = input("\nEnter command (p/f/b/q): ").lower()
+
+            if command == 'p':
+                if self.player.is_playing():
+                    self.player.pause()
+                    self.logger.log_interaction('pause', self.player.get_time())
+                    print("Paused")
+                else:
+                    self.player.play()
+                    self.logger.log_interaction('play', self.player.get_time())
+                    print("Playing")
+
+            elif command == 'f':
+                current_time = self.player.get_time()
+                self.player.set_time(current_time + 10000)
+                self.logger.log_interaction('seek_forward', current_time + 10000)
+                print("Jumped forward 10 seconds")
+
+            elif command == 'b':
+                current_time = self.player.get_time()
+                new_time = max(0, current_time - 10000)
+                self.player.set_time(new_time)
+                self.logger.log_interaction('seek_backward', new_time)
+                print("Jumped backward 10 seconds")
+
+            elif command == 'q':
+                self.player.stop()
+                print(self.logger.generate_summary())
+                break
 
 class InteractionLogger:
     """
@@ -222,18 +272,26 @@ def download_youtube_video(youtube_id: str, output_path: str = "videos") -> str:
         print(f"Error downloading video: {e}")
         return None
 
-def process_video_with_player(video: Video):
-    """Process video and launch the video player"""
+def process_video_with_player(video: Video, use_gui: bool = True):
+    """Process video and launch either GUI or CLI player"""
     try:
-        # First download the video
         video_path = download_youtube_video(video.youtube_id)
         
         if video_path and os.path.exists(video_path):
-            # Launch video player
             print("\nLaunching video player...")
-            player = VideoPlayer(video_path, video.title)
-            player.start()
             
+            if use_gui:
+                try:
+                    player = VideoPlayer(video_path, video.title)
+                    player.start()
+                except Exception as e:
+                    print(f"GUI player failed: {e}")
+                    print("Falling back to CLI player...")
+                    cli_player = CLIVideoPlayer(video_path, video.title)
+                    cli_player.play()
+            else:
+                cli_player = CLIVideoPlayer(video_path, video.title)
+                cli_player.play()
         else:
             print("Error: Could not prepare video for playback")
             
@@ -477,20 +535,23 @@ def display_analysis(transcript_segments, topic_segments, cognitive_segments):
         print("-" * 80)
 
 def main():
-    """Main function to run the CLIP Learning System"""
     print("\n=== Welcome to CLIP Learning System ===")
     print("An intelligent video learning platform")
     
-    # Get user's class
+    # Add mode selection
     while True:
         try:
-            grade = int(input("\nEnter your class (5 or 6): "))
-            if grade not in [5, 6]:
-                print("Please enter either 5 or 6")
-                continue
-            break
+            print("\nSelect Interface Mode:")
+            print("1. Graphical Interface (GUI)")
+            print("2. Command Line Interface (CLI)")
+            mode = int(input("Enter mode (1/2): "))
+            if mode in [1, 2]:
+                break
+            print("Please enter 1 or 2")
         except ValueError:
             print("Please enter a valid number")
+    
+    use_gui = (mode == 1)
     
     # Display subjects
     print("\nAvailable subjects:")
@@ -541,9 +602,7 @@ def main():
     
     if transcript_segments and topic_segments and cognitive_segments:
         display_analysis(transcript_segments, topic_segments, cognitive_segments)
-        
-        # Launch video player after showing analysis
-        process_video_with_player(selected_video)
+        process_video_with_player(selected_video, use_gui=use_gui)
     else:
         print("Error: Could not process video segments")
 
